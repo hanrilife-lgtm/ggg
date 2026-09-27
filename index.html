@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Угадай карту</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, sans-serif;
+    background: #0f1220; color: #eef;
+    min-height: 100vh; padding: 16px;
+  }
+  h1 { margin: 0 0 12px; font-size: 22px; }
+  h2 { margin: 18px 0 8px; font-size: 17px; color: #aab; }
+  .card-panel {
+    background: #1a1f35; border-radius: 14px;
+    padding: 14px; margin-bottom: 14px;
+    border: 1px solid #2a3050;
+  }
+  button {
+    background: #4f7cff; color: #fff; border: 0;
+    border-radius: 10px; padding: 10px 16px;
+    font-size: 15px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { background: #3a68f0; }
+  button:disabled { background: #3a3f55; cursor: not-allowed; }
+  input, select {
+    background: #0f1220; color: #eef; border: 1px solid #2a3050;
+    border-radius: 8px; padding: 10px; font-size: 15px;
+    width: 100%; margin-bottom: 8px;
+  }
+  .row { display: flex; gap: 8px; }
+  .players { display: flex; flex-wrap: wrap; gap: 8px; }
+  .player {
+    background: #0f1220; padding: 6px 12px; border-radius: 20px;
+    border: 1px solid #2a3050; font-size: 14px;
+  }
+  .player.host { border-color: #4f7cff; }
+  .code { font-size: 28px; font-weight: 800; letter-spacing: 4px; color: #4f7cff; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 10px; margin-top: 10px;
+  }
+  .tile {
+    position: relative; cursor: pointer; user-select: none;
+    border-radius: 12px; overflow: hidden;
+    border: 3px solid transparent; transition: transform .1s;
+    background: #0f1220;
+  }
+  .tile:hover { transform: scale(1.03); }
+  .tile img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+  .tile .name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,.65); padding: 4px 6px;
+    font-size: 12px; text-align: center;
+  }
+  .tile.closed { opacity: .35; }
+  .tile.closed::after {
+    content: "✕"; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 44px; color: #ff5c7a; background: rgba(0,0,0,.55);
+  }
+  .tile.mine { border-color: #4ade80; }
+  .my-card {
+    display: inline-flex; flex-direction: column; align-items: center;
+    background: #0f1220; padding: 8px; border-radius: 12px;
+    border: 2px solid #4ade80;
+  }
+  .my-card img { width: 110px; height: 110px; border-radius: 8px; }
+  .my-card span { margin-top: 6px; font-size: 13px; }
+  .muted { color: #889; font-size: 13px; }
+  .hidden { display: none !important; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tab {
+    padding: 8px 14px; border-radius: 20px; cursor: pointer;
+    background: #0f1220; border: 1px solid #2a3050; font-size: 14px;
+  }
+  .tab.active { background: #4f7cff; border-color: #4f7cff; }
+  .winner { text-align: center; padding: 20px; }
+  .winner .big { font-size: 26px; color: #4ade80; font-weight: 800; }
+</style>
+</head>
+<body>
+
+<h1>🎴 Угадай карту</h1>
+
+<!-- ЭКРАН 1: ВХОД -->
+<div id="screen-entry">
+  <div class="card-panel">
+    <input id="playerName" placeholder="Ваше имя" maxlength="16">
+    <div class="row">
+      <button id="btnCreate">Создать комнату</button>
+      <input id="roomCode" placeholder="Код комнаты" maxlength="4" style="text-transform:uppercase">
+      <button id="btnJoin">Войти</button>
+    </div>
+    <div id="entryError" class="muted" style="color:#ff7a90"></div>
+  </div>
+</div>
+
+<!-- ЭКРАН 2: ЛОББИ -->
+<div id="screen-lobby" class="hidden">
+  <div class="card-panel">
+    <div>Код комнаты:</div>
+    <div class="code" id="lobbyCode">----</div>
+    <div class="muted">Скажите код друзьям — они вводят его на своих устройствах.</div>
+  </div>
+
+  <div class="card-panel">
+    <h2>Игроки</h2>
+    <div class="players" id="lobbyPlayers"></div>
+  </div>
+
+  <div class="card-panel" id="themePanel">
+    <h2>Тема</h2>
+    <div class="tabs" id="themeTabs"></div>
+    <div class="muted" id="themeHint"></div>
+  </div>
+
+  <div class="card-panel">
+    <button id="btnStart" disabled>Начать игру</button>
+    <div class="muted" id="startHint" style="margin-top:6px"></div>
+  </div>
+</div>
+
+<!-- ЭКРАН 3: ИГРА -->
+<div id="screen-game" class="hidden">
+  <div class="card-panel">
+    <div class="muted">Ваша карта (её видят только соперники, вы её не знаете):</div>
+    <div id="myCardBox" style="margin-top:8px"></div>
+    <div class="muted" style="margin-top:6px">
+      💡 Задавайте вопросы вживую. Соперник отвечает «да/нет».
+      Если «нет» — кликайте по картам, чтобы закрыть.
+      Когда угадали карту соперника — жмите «Я угадал».
+    </div>
+  </div>
+
+  <div class="card-panel">
+    <h2>Все карты темы</h2>
+    <div class="grid" id="cardsGrid"></div>
+  </div>
+
+  <div class="card-panel">
+    <h2>Я угадал карту игрока:</h2>
+    <div class="players" id="guessList"></div>
+  </div>
+
+  <div class="card-panel">
+    <button id="btnRestartHost" class="hidden">Новая игра</button>
+  </div>
+</div>
+
+<!-- ЭКРАН 4: ФИНАЛ -->
+<div id="screen-over" class="hidden">
+  <div class="card-panel winner">
+    <div class="big" id="winnerText"></div>
+    <div id="winnerSub" style="margin-top:8px"></div>
+    <div id="winnerCard" style="margin-top:14px"></div>
+    <div style="margin-top:16px">
+      <button id="btnRestartHost2" class="hidden">Новая игра</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+
+let state = {
+  myId: null,
+  code: null,
+  isHost: false,
+  room: null,
+  theme: null,
+  myCardId: null,
+  closed: new Set(),
+};
+
+const $ = (s) => document.querySelector(s);
+
+$('#btnCreate').onclick = () => {
+  const name = $('#playerName').value.trim() || 'Игрок';
+  socket.emit('createRoom', { playerName: name }, (res) => {
+    if (!res.ok) return showEntryError(res.error);
+    state.code = res.code;
+    state.isHost = true;
+  });
+};
+
+$('#btnJoin').onclick = () => {
+  const name = $('#playerName').value.trim() || 'Игрок';
+  const code = $('#roomCode').value.trim().toUpperCase();
+  if (!code) return showEntryError('Введите код');
+  socket.emit('joinRoom', { code, playerName: name }, (res) => {
+    if (!res.ok) return showEntryError(res.error);
+    state.code = res.code;
+  });
+};
+
+function showEntryError(t) { $('#entryError').textContent = t; }
+
+socket.on('roomUpdate', (room) => {
+  state.room = room;
+  state.isHost = room.hostId === socket.id;
+
+  if (room.started) return;
+
+  show('screen-lobby');
+  $('#lobbyCode').textContent = room.code;
+
+  const playersBox = $('#lobbyPlayers');
+  playersBox.innerHTML = '';
+  room.players.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'player' + (p.id === room.hostId ? ' host' : '');
+    d.textContent = p.name + (p.id === room.hostId ? ' 👑' : '');
+    playersBox.appendChild(d);
+  });
+
+  const tabs = $('#themeTabs');
+  tabs.innerHTML = '';
+  Object.entries(room.themes).forEach(([key, label]) => {
+    const t = document.createElement('div');
+    t.className = 'tab' + (room.themeKey === key ? ' active' : '');
+    t.textContent = label;
+    if (state.isHost) {
+      t.onclick = () => socket.emit('selectTheme', { code: room.code, themeKey: key });
+    } else {
+      t.style.opacity = .7; t.style.cursor = 'default';
+    }
+    tabs.appendChild(t);
+  });
+
+  const btn = $('#btnStart');
+  btn.classList.toggle('hidden', !state.isHost);
+  btn.disabled = !(state.isHost && room.themeKey && room.players.length >= 2);
+  $('#themeHint').textContent = state.isHost
+    ? 'Выберите тему'
+    : 'Ждём, пока хост выберет тему';
+  $('#startHint').textContent = state.isHost
+    ? (room.players.length < 2 ? 'Нужно минимум 2 игрока' : (!room.themeKey ? 'Выберите тему' : ''))
+    : '';
+});
+
+$('#btnStart').onclick = () => {
+  socket.emit('startGame', { code: state.code }, (res) => {
+    if (res && !res.ok) alert(res.error || 'Ошибка');
+  });
+};
+
+socket.on('gameStarted', ({ theme, myCardId, players }) => {
+  state.theme = theme;
+  state.myCardId = myCardId;
+  state.closed = new Set();
+
+  show('screen-game');
+
+  const myCard = theme.cards.find(c => c.id === myCardId);
+  $('#myCardBox').innerHTML = `
+    <div class="my-card">
+      <img src="${myCard.img}" alt="">
+      <span>${myCard.name}</span>
+    </div>
+  `;
+
+  const grid = $('#cardsGrid');
+  grid.innerHTML = '';
+  theme.cards.forEach(c => {
+    const t = document.createElement('div');
+    t.className = 'tile' + (c.id === myCardId ? ' mine' : '');
+    t.dataset.id = c.id;
+    t.innerHTML = `<img src="${c.img}" alt=""><div class="name">${c.name}</div>`;
+    t.onclick = () => {
+      if (state.closed.has(c.id)) state.closed.delete(c.id);
+      else state.closed.add(c.id);
+      t.classList.toggle('closed', state.closed.has(c.id));
+    };
+    grid.appendChild(t);
+  });
+
+  const gl = $('#guessList');
+  gl.innerHTML = '';
+  players.filter(p => p.id !== socket.id).forEach(p => {
+    const b = document.createElement('button');
+    b.textContent = 'Я угадал: ' + p.name;
+    b.onclick = () => {
+      if (!confirm(`Уверены, что у ${p.name} карта именно та, что вы назвали вживую?`)) return;
+      socket.emit('claimWin', { code: state.code, guessedPlayerId: p.id });
+    };
+    gl.appendChild(b);
+  });
+
+  $('#btnRestartHost').classList.toggle('hidden', !state.isHost);
+});
+
+socket.on('gameOver', ({ winnerName, targetName, targetCardId, theme }) => {
+  const card = theme.cards.find(c => c.id === targetCardId);
+  show('screen-over');
+  $('#winnerText').textContent = `🏆 ${winnerName} угадал!`;
+  $('#winnerSub').textContent = `У игрока ${targetName} была карта:`;
+  $('#winnerCard').innerHTML = `
+    <div class="my-card" style="border-color:#4f7cff">
+      <img src="${card.img}">
+      <span>${card.name}</span>
+    </div>
+  `;
+  $('#btnRestartHost2').classList.toggle('hidden', !state.isHost);
+});
+
+socket.on('backToLobby', () => show('screen-lobby'));
+
+$('#btnRestartHost').onclick = () => socket.emit('restart', { code: state.code });
+$('#btnRestartHost2').onclick = () => socket.emit('restart', { code: state.code });
+
+function show(id) {
+  ['screen-entry','screen-lobby','screen-game','screen-over']
+    .forEach(s => $('#'+s).classList.toggle('hidden', s !== id));
+}
+
+socket.on('connect', () => { state.myId = socket.id; });
+</script>
+</body>
+</html>
